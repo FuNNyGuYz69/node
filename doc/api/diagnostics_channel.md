@@ -60,6 +60,23 @@ if (channel.hasSubscribers) {
 
 // Unsubscribe from the channel
 diagnostics_channel.unsubscribe('my-channel', onMessage);
+
+import { AsyncLocalStorage } from 'node:async_hooks';
+
+// Create a storage channel
+const storageChannel = diagnostics_channel.storageChannel('my-channel');
+const storage = new AsyncLocalStorage();
+
+// Bind an AsyncLocalStorage instance to the channel. This runs the storage
+// with input from the channel as the context data.
+storageChannel.bindStore(storage, (name) => {
+  return `Hello, ${name}`;
+});
+
+// Runs the bound storage with the given channel input.
+const message = storageChannel.run('world', () => {
+  return storage.getStore();
+});
 ```
 
 ```cjs
@@ -85,6 +102,23 @@ if (channel.hasSubscribers) {
 
 // Unsubscribe from the channel
 diagnostics_channel.unsubscribe('my-channel', onMessage);
+
+const { AsyncLocalStorage } = require('node:async_hooks');
+
+// Create a storage channel
+const storageChannel = diagnostics_channel.storageChannel('my-channel');
+const storage = new AsyncLocalStorage();
+
+// Bind an AsyncLocalStorage instance to the channel. This runs the storage
+// with input from the channel as the context data.
+storageChannel.bindStore(storage, (name) => {
+  return `Hello, ${name}`;
+});
+
+// Runs the bound storage with the given channel input.
+const message = storageChannel.run('world', () => {
+  return storage.getStore();
+});
 ```
 
 #### `diagnostics_channel.hasSubscribers(name)`
@@ -217,6 +251,33 @@ function onMessage(message, name) {
 diagnostics_channel.subscribe('my-channel', onMessage);
 
 diagnostics_channel.unsubscribe('my-channel', onMessage);
+```
+
+#### `diagnostics_channel.storageChannel(name)`
+
+<!-- YAML
+added:
+ - REPLACEME
+-->
+
+* `name` {string|symbol} The channel name
+* Returns: {StorageChannel} named StorageChannel
+
+A [`StorageChannel`][] is used to bind diagnostics\_channel inputs as the
+context for an [`AsyncLocalStorage`][] instance.
+
+```mjs
+import diagnostics_channel from 'node:diagnostics_channel';
+import { AsyncLocalStorage } from 'node:async_hooks';
+
+const channel = diagnostics_channel.storageChannel('my-channel');
+```
+
+```cjs
+const diagnostics_channel = require('node:diagnostics_channel');
+const { AsyncLocalStorage } = require('node:async_hooks');
+
+const channel = diagnostics_channel.storageChannel('my-channel');
 ```
 
 ### Class: `Channel`
@@ -399,6 +460,163 @@ channel.subscribe(onMessage);
 channel.unsubscribe(onMessage);
 ```
 
+### Class: `StorageChannel`
+
+<!-- YAML
+added:
+ - REPLACEME
+-->
+
+The class `StorageChannel` represents a pair of named channels within the data
+pipeline. It is used to encapsulate a context in which an `AsyncLocalStorage`
+should have a bound value.
+
+#### `storageChannel.isBoundToStore(store)`
+
+* `store` {AsyncLocalStorage} a store that may or may not be bound
+* Returns: {boolean}  `true` if store is bound to channel, `false` otherwise.
+
+Checks if the given store is already bound to the [`StorageChannel`][].
+
+```mjs
+import diagnostics_channel from 'node:diagnostics_channel';
+import { AsyncLocalStorage } from 'node:async_hooks';
+
+const storageChannel = diagnostics_channel.storageChannel('my-channel');
+const storage = new AsyncLocalStorage();
+
+if (storageChannel.isBoundToStore(storage)) {
+  // The storage is already bound to storageChannel
+}
+```
+
+```cjs
+const diagnostics_channel = require('node:diagnostics_channel');
+const { AsyncLocalStorage } = require('node:async_hooks');
+
+const storageChannel = diagnostics_channel.storageChannel('my-channel');
+const storage = new AsyncLocalStorage();
+
+if (storageChannel.isBoundToStore(storage)) {
+  // The storage is already bound to storageChannel
+}
+```
+
+#### `storageChannel.bindStore(store[, builder])`
+
+* `store` {AsyncLocalStorage} a store to bind to the channel
+* `builder` {Function} transform function from channel input to context
+* Returns: {boolean} `true` if the store was not already bound, otherwise `false`
+
+Binds an [`AsyncLocalStorage`][] instance to the [`StorageChannel`][] such that
+inputs to [`storageChannel.run(data, handler)`][] will run the store with the
+given input data as the context.
+
+An optional builder function can be provided to perform transformations on
+the data given by the channel before being set as the storage context data.
+
+```mjs
+import diagnostics_channel from 'node:diagnostics_channel';
+import { AsyncLocalStorage } from 'node:async_hooks';
+
+const storageChannel = diagnostics_channel.storageChannel('my-channel');
+const storage = new AsyncLocalStorage();
+
+// Stores the channel input in a `channelInput` property of the context.
+storageChannel.bindStore(storage, (channelInput) => {
+  return { channelInput };
+});
+```
+
+```cjs
+const diagnostics_channel = require('node:diagnostics_channel');
+const { AsyncLocalStorage } = require('node:async_hooks');
+
+const storageChannel = diagnostics_channel.storageChannel('my-channel');
+const storage = new AsyncLocalStorage();
+
+// Stores the channel input in a `channelInput` property of the context.
+storageChannel.bindStore(storage, (channelInput) => {
+  return { channelInput };
+});
+```
+
+#### `storageChannel.unbindStore(store)`
+
+* `store` {AsyncLocalStorage} a store to unbind from the channel
+* Returns: {boolean} `true` if the store was previously bound, otherwise `false`
+
+Unbinds an [`AsyncLocalStorage`][] instance from the [`StorageChannel`][]. After
+doing this channel inputs will no longer be used to create contexts for the
+store to run with.
+
+```mjs
+import diagnostics_channel from 'node:diagnostics_channel';
+import { AsyncLocalStorage } from 'node:async_hooks';
+
+const storageChannel = diagnostics_channel.storageChannel('my-channel');
+const storage = new AsyncLocalStorage();
+
+// Stop using channel inputs to initiate new context runs on the storage.
+storageChannel.unbindStore(storage);
+```
+
+```cjs
+const diagnostics_channel = require('node:diagnostics_channel');
+const { AsyncLocalStorage } = require('node:async_hooks');
+
+const storageChannel = diagnostics_channel.storageChannel('my-channel');
+const storage = new AsyncLocalStorage();
+
+// Stop using channel inputs to initiate new context runs on the storage.
+storageChannel.unbindStore(storage);
+```
+
+#### `storageChannel.run(data, handler)`
+
+* `data` {any} data to pass to any bound stores as context input
+* `handler` {Function} a scope function in which the store should run
+* Returns: {any} returns the return value of the given handler function
+
+While the handler function is running, any bound storages will be given the
+data as input to run the storage context.
+
+```mjs
+import diagnostics_channel from 'node:diagnostics_channel';
+import { AsyncLocalStorage } from 'node:async_hooks';
+
+const storageChannel = diagnostics_channel.storageChannel('my-channel');
+
+// Create and bind a storage to the storage channel
+const storage = new AsyncLocalStorage();
+storageChannel.bind(storage);
+
+// The storage will be run with the given data
+storageChannel.run({ my: 'context' }, () => {
+  if (storage.getStore().my === 'context') {
+    // The given context will be used within this function
+  }
+});
+```
+
+```cjs
+const diagnostics_channel = require('node:diagnostics_channel');
+const { AsyncLocalStorage } = require('node:async_hooks');
+
+const storageChannel = diagnostics_channel.storageChannel('my-channel');
+
+// Create and bind a storage to the storage channel
+const storage = new AsyncLocalStorage();
+storageChannel.bind(storage);
+
+// The storage will be run with the given data
+storageChannel.run({ my: 'context' }, () => {
+  if (storage.getStore().my === 'context') {
+    // The given context will be used within this function
+  }
+});
+```
+
 ### Built-in Channels
 
 #### HTTP
@@ -481,8 +699,11 @@ added: REPLACEME
 Emitted when a new thread is created.
 
 [`'uncaughtException'`]: process.md#event-uncaughtexception
+[`AsyncLocalStorage`]: async_context.md#class-asynclocalstorage
+[`StorageChannel`]: #class-storagechannel
 [`Worker`]: worker_threads.md#class-worker
 [`channel.subscribe(onMessage)`]: #channelsubscribeonmessage
 [`diagnostics_channel.channel(name)`]: #diagnostics_channelchannelname
 [`diagnostics_channel.subscribe(name, onMessage)`]: #diagnostics_channelsubscribename-onmessage
 [`diagnostics_channel.unsubscribe(name, onMessage)`]: #diagnostics_channelunsubscribename-onmessage
+[`storageChannel.run(data, handler)`]: #storagechannelrundata-handler
