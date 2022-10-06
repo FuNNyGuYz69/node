@@ -8,8 +8,10 @@ const assert = require('assert');
 
 const store = new AsyncLocalStorage();
 
+const channel = dc.storageChannel('http.server');
+
 // Test optional build function behaviour
-dc.bindStore('http.server', store);
+channel.bindStore(store);
 
 assert.strictEqual(store.getStore(), undefined);
 const app = createServer(common.mustCall((req, res) => {

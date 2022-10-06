@@ -9,23 +9,52 @@ const store = new AsyncLocalStorage();
 
 const input = {
   foo: 'bar'
-}
+};
 
 const output = {
   baz: 'buz'
 };
 
-dc.bindStore('test', store, common.mustCall((foundInput) => {
-  assert.deepStrictEqual(foundInput, input);
-  return output;
-}));
-
 const channel = dc.storageChannel('test');
 
+// Should only be called once to verify unbind works
+const build = common.mustCall((foundInput) => {
+  assert.deepStrictEqual(foundInput, input);
+  return output;
+});
+
+channel.bindStore(store, build);
+
+// Should have an empty store before run
 assert.strictEqual(store.getStore(), undefined);
 
-channel.run(input, common.mustCall(() => {
+// Should return the result of its runner function
+const result = channel.run(input, common.mustCall(() => {
+  // Should have a store containing the result of the build function
   assert.deepStrictEqual(store.getStore(), output);
+  return output;
+}));
+assert.deepStrictEqual(result, output);
+
+// Should have an empty store after run
+assert.strictEqual(store.getStore(), undefined);
+
+// Should have an empty store during run after unbinding
+channel.unbindStore(store, build);
+channel.run(input, common.mustCall(() => {
+  assert.strictEqual(store.getStore(), undefined);
 }));
 
-assert.strictEqual(store.getStore(), undefined);
+// Should allow omitting build on bind
+const a = dc.storageChannel('test');
+a.bindStore(store);
+
+// Should allow nested runs
+const b = dc.storageChannel('test');
+b.run(1, common.mustCall(() => {
+  assert.strictEqual(store.getStore(), 1);
+  b.run(2, common.mustCall(() => {
+    assert.strictEqual(store.getStore(), 2);
+  }));
+  assert.strictEqual(store.getStore(), 1);
+}));
